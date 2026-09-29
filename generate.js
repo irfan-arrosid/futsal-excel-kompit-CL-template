@@ -107,7 +107,7 @@ const CL_ROSTER_COLUMNS = [
   { header: 'Nama Bank', width: 18 },
   { header: 'Merk dan Tipe Kendaraan', width: 26 },
   { header: 'Merk dan Tipe Laptop', width: 26 },
-  { header: 'Nomor Kepesertaan BPJSTK', width: 26, text: true },
+  { header: 'Nomor Kepesertaan BPJSTK', width: 26, text: true, athleteOnly: true },
   {
     header: 'Asal Club (Pro/Non Pro) Sebelumnya\ndan tahun bergabung',
     width: 35,
@@ -137,7 +137,7 @@ const CL_PETUNJUK_ROWS = [
   ['Merk dan Tipe Laptop', 'Opsional. Contoh: ASUS VivoBook.'],
   [
     'Nomor Kepesertaan BPJSTK',
-    `Nomor kepesertaan BPJS Ketenagakerjaan, ${CL_BPJSTK_LENGTH} digit angka. Diisi untuk Athlete dan Official yang sudah terdaftar.`,
+    `Nomor kepesertaan BPJS Ketenagakerjaan, ${CL_BPJSTK_LENGTH} digit angka. Hanya untuk Athlete (jika sudah terdaftar).`,
   ],
   [
     'Asal Club (Pro/Non Pro) Sebelumnya dan tahun bergabung',
@@ -191,6 +191,14 @@ const FILL_AUTO_GRAY = {
   pattern: 'solid',
   fgColor: { argb: 'FFCCCCCC' },
   bgColor: { argb: 'FFCCCCCC' },
+};
+
+/** Blank athlete-only cells on Official/Coach/Manager (no header / not editable). */
+const FILL_DISABLED = {
+  type: 'pattern',
+  pattern: 'solid',
+  fgColor: { argb: 'FFE8E8E8' },
+  bgColor: { argb: 'FFE8E8E8' },
 };
 
 function parseArgs(argv) {
@@ -770,20 +778,17 @@ function applyRosterHeaders(ws) {
     ['C', 'Foto'],
     ['D', requiredHeader('Email')],
     ['E', plainHeader('No. WhatsApp')],
-    ['F', plainHeader('No. Punggung')],
-    ['G', plainHeader('Posisi')],
+    // Athlete-only: F/G (jersey/posisi), J–N (NIM/Fakultas/Jurusan/Tahun Awal/IPK)
     ['H', plainHeader('Tempat Lahir')],
     ['I', plainHeader('Tanggal Lahir')],
-    ['J', plainHeader('NIM')],
-    ['K', plainHeader('Fakultas')],
-    ['L', plainHeader('Jurusan')],
-    ['M', plainHeader('Tahun Awal')],
-    ['N', plainHeader('IPK')],
     ['O', plainHeader('Berat Badan')],
     ['P', plainHeader('Tinggi Badan (cm)')],
     ['Q', plainHeader('Instagram')],
     ['R', plainHeader('TikTok')],
   ];
+
+  /** Kompit cols blank+locked on Official/Coach/Manager. */
+  const STAFF_BLANK_KOMPIT_COLS = ['F', 'G', 'J', 'K', 'L', 'M', 'N'];
 
   ROSTER_SECTIONS.forEach((section) => {
     const defs = section.tipe === 'Athlete' ? athleteDefs : staffDefs;
@@ -796,6 +801,15 @@ function applyRosterHeaders(ws) {
       cell.border = { ...THIN_BORDER };
       lockCell(cell, true);
     });
+    if (section.tipe !== 'Athlete') {
+      STAFF_BLANK_KOMPIT_COLS.forEach((col) => {
+        const cell = ws.getCell(`${col}${section.headerRow}`);
+        cell.value = null;
+        cell.fill = { ...FILL_DISABLED };
+        cell.border = { ...THIN_BORDER };
+        lockCell(cell, true);
+      });
+    }
   });
 
   for (let c = 1; c <= KOMPIT_LAST_COL; c++) {
@@ -960,15 +974,8 @@ function buildSampleRoster(gender) {
       C: photoHyperlink(slug),
       D: `${emailLocal}@student.ugm.ac.id`,
       E: `0812${String(70000000 + i * 137).slice(0, 8)}`,
-      F: jersey,
-      G: posisi,
       H: pick(cities, i),
       I: `${String(10 + (i % 18)).padStart(2, '0')}-${String(1 + (i % 12)).padStart(2, '0')}-200${4 + (i % 3)}`,
-      J: `${nimYear}5150${String(7000 + i).padStart(4, '0')}`,
-      K: pick(faculties, i),
-      L: pick(majors, i),
-      M: 2023 + (i % 2),
-      N: Number((2.8 + (i % 12) * 0.1).toFixed(1)),
       O: isPA ? 65 + (i % 15) : 48 + (i % 12),
       P: isPA ? 168 + (i % 14) : 155 + (i % 12),
       Q: slug.replace(/-/g, '').slice(0, 30),
@@ -980,11 +987,18 @@ function buildSampleRoster(gender) {
       W: pick(banks, i),
       X: pick(kendaraan, i),
       Y: pick(laptops, i),
-      Z: String(10000000000 + i * 111).slice(0, 11),
       AA: pick(clubsPrev, i),
       AB: pick(clubsNow, i),
     };
     if (tipe === 'Athlete') {
+      values.F = jersey;
+      values.G = posisi;
+      values.J = `${nimYear}5150${String(7000 + i).padStart(4, '0')}`;
+      values.K = pick(faculties, i);
+      values.L = pick(majors, i);
+      values.M = 2023 + (i % 2);
+      values.N = Number((2.8 + (i % 12) * 0.1).toFixed(1));
+      values.Z = String(10000000000 + i * 111).slice(0, 11);
       values.AC = pick(smp, i);
       values.AD = pick(sma, i);
     }
@@ -999,7 +1013,6 @@ function buildSampleRoster(gender) {
         A: tipe,
         B: name,
         C: photoHyperlink(slugifyName(name)),
-        G: '-',
       },
     });
   };
@@ -1010,7 +1023,7 @@ function buildSampleRoster(gender) {
   });
   const off = sectionByTipe.Official;
   officialNames.slice(0, SAMPLE_COUNTS.Official).forEach((name, i) => {
-    pushFull('Official', name, 97 + i, '-', off.dataStart + i);
+    pushFull('Official', name, null, null, off.dataStart + i);
   });
   const coach = sectionByTipe.Coach;
   coachNames.slice(0, SAMPLE_COUNTS.Coach).forEach((name, i) => {
@@ -1028,6 +1041,13 @@ const SAMPLE_ROSTERS = {
   PA: buildSampleRoster('PA'),
   PI: buildSampleRoster('PI'),
 };
+
+function rosterSectionForRow(row) {
+  return ROSTER_SECTIONS.find((s) => row >= s.dataStart && row < s.dataStart + s.count);
+}
+
+/** Column indexes blank+locked for Official/Coach/Manager (F,G,J–N,Z). */
+const ATHLETE_ONLY_COL_INDEXES = new Set([6, 7, 10, 11, 12, 13, 14, 26]);
 
 function applySampleRows(ws, sheetName) {
   // Example roster rows so users see expected formats
@@ -1060,13 +1080,19 @@ function applySampleRows(ws, sheetName) {
     });
   });
 
-  // Borders + unlock data rows only (skip section headers); Tipe (col A) stays locked
+  // Borders + unlock data rows; athlete-only cols gray+locked for non-Athlete
   rosterDataRows().forEach((r) => {
+    const isAthlete = rosterSectionForRow(r)?.tipe === 'Athlete';
     for (let c = 1; c <= KOMPIT_LAST_COL; c++) {
       const cell = ws.getCell(r, c);
       cell.border = { ...THIN_BORDER };
-      if (c === 1) {
+      const athleteOnly = !isAthlete && ATHLETE_ONLY_COL_INDEXES.has(c);
+      if (c === 1 || athleteOnly) {
         lockCell(cell, true);
+        if (athleteOnly) {
+          cell.value = null;
+          cell.fill = { ...FILL_DISABLED };
+        }
       } else {
         lockCell(cell, false);
       }
@@ -1081,10 +1107,15 @@ function applySampleRows(ws, sheetName) {
 function applyRosterValidations(ws) {
   // Validations only on section data rows (not header rows between sections)
   const posisiList = `"${POSISI_OPTIONS.join(',')}"`;
-  const uniqFirst = ROSTER_SECTIONS[0].dataStart;
-  const uniqLast = rosterLastRow();
+  const ath = ROSTER_SECTIONS.find((s) => s.tipe === 'Athlete');
+  const jerseyUniqFirst = ath.dataStart;
+  const jerseyUniqLast = ath.dataStart + ath.count - 1;
+  const emailUniqFirst = ROSTER_SECTIONS[0].dataStart;
+  const emailUniqLast = rosterLastRow();
 
   rosterDataRows().forEach((r) => {
+    const isAthlete = rosterSectionForRow(r)?.tipe === 'Athlete';
+
     // Column C: photo URL
     addDataValidation(ws, `C${r}`, {
       type: 'custom',
@@ -1101,7 +1132,7 @@ function applyRosterValidations(ws) {
     addDataValidation(ws, `D${r}`, {
       type: 'custom',
       formulae: [
-        `OR(D${r}="",AND(ISNUMBER(FIND("@",D${r})),ISNUMBER(FIND(".",D${r},FIND("@",D${r}))),ISERROR(FIND(" ",D${r})),COUNTIF($D$${uniqFirst}:$D$${uniqLast},D${r})=1))`,
+        `OR(D${r}="",AND(ISNUMBER(FIND("@",D${r})),ISNUMBER(FIND(".",D${r},FIND("@",D${r}))),ISERROR(FIND(" ",D${r})),COUNTIF($D$${emailUniqFirst}:$D$${emailUniqLast},D${r})=1))`,
       ],
       promptTitle: 'Email',
       prompt: 'Email valid dan unik di sheet ini',
@@ -1121,27 +1152,73 @@ function applyRosterValidations(ws) {
         'Hanya angka. Format: 08xxxxxxxxxx, 62xxxxxxxxxx, atau +62xxxxxxxxxx. Huruf tidak diperbolehkan.',
     });
 
-    // Column F: jersey number 0–99, integer, unique in sheet
-    addDataValidation(ws, `F${r}`, {
-      type: 'custom',
-      formulae: [
-        `OR(F${r}="",AND(ISNUMBER(F${r}),F${r}=INT(F${r}),F${r}>=0,F${r}<=99,COUNTIF($F$${uniqFirst}:$F$${uniqLast},F${r})=1))`,
-      ],
-      promptTitle: 'No. Punggung',
-      prompt: 'Angka 0–99, unik di sheet',
-      errorTitle: 'No. Punggung tidak valid',
-      error: 'Harus angka 0–99 (maks 2 digit) dan tidak boleh duplikat.',
-    });
+    if (isAthlete) {
+      // Column F: jersey number 0–99, integer, unique among athletes
+      addDataValidation(ws, `F${r}`, {
+        type: 'custom',
+        formulae: [
+          `OR(F${r}="",AND(ISNUMBER(F${r}),F${r}=INT(F${r}),F${r}>=0,F${r}<=99,COUNTIF($F$${jerseyUniqFirst}:$F$${jerseyUniqLast},F${r})=1))`,
+        ],
+        promptTitle: 'No. Punggung',
+        prompt: 'Angka 0–99, unik di sheet',
+        errorTitle: 'No. Punggung tidak valid',
+        error: 'Harus angka 0–99 (maks 2 digit) dan tidak boleh duplikat.',
+      });
 
-    // Column G: position
-    addDataValidation(ws, `G${r}`, {
-      type: 'list',
-      formulae: [posisiList],
-      promptTitle: 'Posisi',
-      prompt: 'Pilih posisi futsal',
-      errorTitle: 'Posisi tidak valid',
-      error: 'Pilih dari dropdown.',
-    });
+      // Column G: position
+      addDataValidation(ws, `G${r}`, {
+        type: 'list',
+        formulae: [posisiList],
+        promptTitle: 'Posisi',
+        prompt: 'Pilih posisi futsal',
+        errorTitle: 'Posisi tidak valid',
+        error: 'Pilih dari dropdown.',
+      });
+
+      // Column J: Indonesian student ID (NIM), 8–18 digits
+      addDataValidation(ws, `J${r}`, {
+        type: 'custom',
+        formulae: [
+          `OR(J${r}="",AND(LEN(TRIM(J${r}))>=8,LEN(TRIM(J${r}))<=18,ISNUMBER(VALUE(J${r})),ISERROR(FIND(" ",J${r})),ISERROR(FIND(".",J${r})),ISERROR(FIND(",",J${r})),ISERROR(FIND("-",J${r})),ISERROR(FIND("e",LOWER(J${r}))),ISERROR(FIND("+",J${r}))))`,
+        ],
+        promptTitle: 'NIM',
+        prompt: '8–18 digit angka (NIM Indonesia)',
+        errorTitle: 'NIM tidak valid',
+        error: 'NIM harus 8–18 digit angka tanpa huruf/spasi.',
+      });
+
+      // Column K: Fakultas (required for Athlete)
+      addDataValidation(ws, `K${r}`, {
+        type: 'custom',
+        formulae: [`OR(A${r}<>"Athlete",LEN(TRIM(K${r}))>=1)`],
+        promptTitle: 'Fakultas',
+        prompt: 'Wajib diisi jika Tipe = Athlete',
+        errorTitle: 'Fakultas wajib',
+        error: 'Fakultas wajib diisi untuk Athlete.',
+      });
+
+      // Column M: enrollment year 2023–current year
+      addDataValidation(ws, `M${r}`, {
+        type: 'whole',
+        operator: 'between',
+        formulae: [TAHUN_AWAL_MIN, CURRENT_YEAR],
+        promptTitle: 'Tahun Awal',
+        prompt: `${TAHUN_AWAL_MIN}–${CURRENT_YEAR}`,
+        errorTitle: 'Tahun Awal tidak valid',
+        error: `Tahun awal harus antara ${TAHUN_AWAL_MIN} dan ${CURRENT_YEAR}.`,
+      });
+
+      // Column N: GPA (IPK) 2.25–4.00 (e.g. 3.5)
+      addDataValidation(ws, `N${r}`, {
+        type: 'decimal',
+        operator: 'between',
+        formulae: [2.25, 4],
+        promptTitle: 'IPK',
+        prompt: 'Contoh: 3.5 (min 2.25, max 4.00)',
+        errorTitle: 'IPK tidak valid',
+        error: 'IPK harus desimal 2.25–4.00 (contoh: 3.5).',
+      });
+    }
 
     // Column H: birth city (Indonesia)
     addDataValidation(ws, `H${r}`, {
@@ -1163,50 +1240,6 @@ function applyRosterValidations(ws) {
       prompt: 'DD-MM-YYYY atau DD/MM/YYYY',
       errorTitle: 'Tanggal tidak valid',
       error: 'Gunakan format DD-MM-YYYY atau DD/MM/YYYY.',
-    });
-
-    // Column J: Indonesian student ID (NIM), 8–18 digits
-    addDataValidation(ws, `J${r}`, {
-      type: 'custom',
-      formulae: [
-        `OR(J${r}="",AND(LEN(TRIM(J${r}))>=8,LEN(TRIM(J${r}))<=18,ISNUMBER(VALUE(J${r})),ISERROR(FIND(" ",J${r})),ISERROR(FIND(".",J${r})),ISERROR(FIND(",",J${r})),ISERROR(FIND("-",J${r})),ISERROR(FIND("e",LOWER(J${r}))),ISERROR(FIND("+",J${r}))))`,
-      ],
-      promptTitle: 'NIM',
-      prompt: '8–18 digit angka (NIM Indonesia)',
-      errorTitle: 'NIM tidak valid',
-      error: 'NIM harus 8–18 digit angka tanpa huruf/spasi.',
-    });
-
-    // Column K: Fakultas (required for Athlete)
-    addDataValidation(ws, `K${r}`, {
-      type: 'custom',
-      formulae: [`OR(A${r}<>"Athlete",LEN(TRIM(K${r}))>=1)`],
-      promptTitle: 'Fakultas',
-      prompt: 'Wajib diisi jika Tipe = Athlete',
-      errorTitle: 'Fakultas wajib',
-      error: 'Fakultas wajib diisi untuk Athlete.',
-    });
-
-    // Column M: enrollment year 2023–current year
-    addDataValidation(ws, `M${r}`, {
-      type: 'whole',
-      operator: 'between',
-      formulae: [TAHUN_AWAL_MIN, CURRENT_YEAR],
-      promptTitle: 'Tahun Awal',
-      prompt: `${TAHUN_AWAL_MIN}–${CURRENT_YEAR}`,
-      errorTitle: 'Tahun Awal tidak valid',
-      error: `Tahun awal harus antara ${TAHUN_AWAL_MIN} dan ${CURRENT_YEAR}.`,
-    });
-
-    // Column N: GPA (IPK) 2.25–4.00 (e.g. 3.5)
-    addDataValidation(ws, `N${r}`, {
-      type: 'decimal',
-      operator: 'between',
-      formulae: [2.25, 4],
-      promptTitle: 'IPK',
-      prompt: 'Contoh: 3.5 (min 2.25, max 4.00)',
-      errorTitle: 'IPK tidak valid',
-      error: 'IPK harus desimal 2.25–4.00 (contoh: 3.5).',
     });
 
     // Column O: weight (kg)
@@ -1311,15 +1344,22 @@ function applyClRosterColumns(ws, sheetName) {
 
     ROSTER_SECTIONS.forEach((section) => {
       const header = ws.getCell(section.headerRow, c);
-      const showRequired =
-        col.requiredForAthlete && section.tipe === 'Athlete';
-      header.value = showRequired ? requiredHeader(col.header) : col.header;
-      if (!showRequired) {
+      const athleteOnlyHidden = col.athleteOnly && section.tipe !== 'Athlete';
+      if (athleteOnlyHidden) {
+        header.value = null;
+        header.fill = { ...FILL_DISABLED };
         header.font = { name: 'Cambria', bold: true, color: { theme: 1 }, size: 11 };
+      } else {
+        const showRequired =
+          col.requiredForAthlete && section.tipe === 'Athlete';
+        header.value = showRequired ? requiredHeader(col.header) : col.header;
+        if (!showRequired) {
+          header.font = { name: 'Cambria', bold: true, color: { theme: 1 }, size: 11 };
+        }
       }
       header.border = { ...THIN_BORDER };
       lockCell(header, true);
-      if (col.wrapHeader) {
+      if (col.wrapHeader && !athleteOnlyHidden) {
         header.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
         needsWrappedHeader = true;
       }
@@ -1331,7 +1371,14 @@ function applyClRosterColumns(ws, sheetName) {
       cell.border = { ...THIN_BORDER };
       cell.font = { name: 'Calibri', color: { theme: 1 } };
       if (col.text) cell.numFmt = '@';
-      lockCell(cell, false);
+      const isAthlete = rosterSectionForRow(r)?.tipe === 'Athlete';
+      if (col.athleteOnly && !isAthlete) {
+        cell.value = null;
+        cell.fill = { ...FILL_DISABLED };
+        lockCell(cell, true);
+      } else {
+        lockCell(cell, false);
+      }
     });
 
     // Sample CL values are filled by applySampleRows (S..AD on example rows).
@@ -1352,6 +1399,7 @@ function applyClRosterColumns(ws, sheetName) {
 
     if (col.header === 'Nomor Kepesertaan BPJSTK') {
       dataRows.forEach((r) => {
+        if (rosterSectionForRow(r)?.tipe !== 'Athlete') return;
         const ref = `${colLetter}${r}`;
         addDataValidation(ws, ref, {
           type: 'custom',
