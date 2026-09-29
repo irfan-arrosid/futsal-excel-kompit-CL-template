@@ -3,7 +3,7 @@
  * Generate the Kompit Futsal team roster Excel template.
  *
  * Editable ranges (everything else is sheet-protected):
- *   - TEAM: D1:D4 (identitas) + G1:G2 (Campus League) + F8:I9 (Partisipasi & warna)
+ *   - TEAM: D1:D4 (identitas) + G1:G2 (Campus League) + F8:I9 (Ikut/Tidak Ikut & warna)
  *   - PA / PI: A3:Q16 (Kompit) + R3:AA16 (Campus League)
  *   - Wilayah: fully locked (dropdown source only)
  *
@@ -25,6 +25,8 @@ const path = require('path');
 const ExcelJS = require('exceljs');
 
 const REGIONS = require('./data/indonesia-regions.json');
+/** Sorted PT names from data/daftar-kampus.xlsx (see indonesia-universities.json). */
+const UNIVERSITIES = require('./data/indonesia-universities.json');
 
 const SHEET_PROTECT_PASSWORD = 'kompit';
 const DATA_START_ROW = 3;
@@ -140,8 +142,8 @@ const CL_PETUNJUK_ROWS = [
     'Terisi otomatis dari Cabang Olahraga + jenis tim Putra/Putri (contoh: Futsal Putra). Tidak perlu diisi manual.',
   ],
   [
-    'Partisipasi (sheet TEAM, kolom F)',
-    'Opsional. TRUE jika tim ikut berpartisipasi, FALSE jika tidak. Default TRUE.',
+    'Ikut/Tidak Ikut (sheet TEAM, kolom F)',
+    'Opsional. TRUE jika tim ikut, FALSE jika tidak ikut. Default TRUE.',
   ],
   [
     'Catatan Campus League',
@@ -249,9 +251,12 @@ let PROVINSI_LIST_FORMULA = null;
 let KOTA_LIST_FORMULA = null;
 /**
  * Province-dependent city list for TEAM!D2.
- * Points at Wilayah!D which is filled by a FILTER formula keyed off TEAM!D3.
+ * Points at Wilayah!D filled by legacy INDEX/MATCH + COUNTIF rank (no FILTER),
+ * so cascading works in Excel desktop, LibreOffice, Excel web, and Google Sheets.
  */
 let KOTA_CASCADING_FORMULA = null;
+/** Full university list for TEAM!D1 (daftar-kampus.xlsx). */
+let UNIVERSITAS_LIST_FORMULA = null;
 
 function initRegionListFormulas() {
   // Build sorted province/city lists and the Excel range formulas used by dropdowns
@@ -266,14 +271,15 @@ function initRegionListFormulas() {
 
   PROVINSI_LIST_FORMULA = `Wilayah!$F$2:$F$${provinces.length + 1}`;
   KOTA_LIST_FORMULA = `Wilayah!$G$2:$G$${allCities.length + 1}`;
-  // Cascading cities from FILTER output (cross-sheet list DV works in Google Sheets)
-  KOTA_CASCADING_FORMULA = `Wilayah!$D$2:$D$${maxPerProv + 5}`;
+  // Cascading cities: static range on Wilayah!D (INDEX/MATCH output of ranked pairs)
+  KOTA_CASCADING_FORMULA = `Wilayah!$D$2:$D$${maxPerProv + 1}`;
+  UNIVERSITAS_LIST_FORMULA = `Universitas!$A$2:$A$${UNIVERSITIES.length + 1}`;
 
   return { provinces, allCities, maxPerProv, dataLastRow };
 }
 
 function buildRefSheet(wb) {
-  // Wilayah sheet: province/city pairs + FILTER helper + lookup columns
+  // Wilayah sheet: province/city pairs + legacy cascading helper + lookup columns
   const { provinces, allCities, maxPerProv, dataLastRow } = initRegionListFormulas();
 
   const ws = wb.addWorksheet('Wilayah', {
@@ -288,7 +294,7 @@ function buildRefSheet(wb) {
   ws.getCell('B1').font = { bold: true, name: 'Calibri' };
 
   let row = 2;
-  // Flat Province|City table used as FILTER input
+  // Flat Province|City table used by cascading helper formulas
   provinces.forEach((p) => {
     REGIONS[p].forEach((city) => {
       ws.getCell(`A${row}`).value = p;
@@ -297,12 +303,25 @@ function buildRefSheet(wb) {
     });
   });
 
-  // Column D: FILTER cities matching TEAM!D3 (feeds cascading city dropdown)
+  // Column C: rank matching cities for TEAM!D3 (1,2,3… on matching rows only).
+  // Uses IF + COUNTIF — works in Excel desktop, LibreOffice, Sheets, Excel web.
+  ws.getCell('C1').value = 'UrutanKota';
+  ws.getCell('C1').font = { bold: true, name: 'Calibri' };
+  for (let r = 2; r <= dataLastRow; r++) {
+    ws.getCell(`C${r}`).value = {
+      formula: `IF($A${r}=TEAM!$D$3,COUNTIF($A$2:$A${r},TEAM!$D$3),"")`,
+    };
+  }
+
+  // Column D: compact list of cities for the selected province (feeds TEAM!D2 DV)
   ws.getCell('D1').value = 'KotaSesuaiProvinsi';
   ws.getCell('D1').font = { bold: true, name: 'Calibri' };
-  ws.getCell('D2').value = {
-    formula: `IFERROR(FILTER(B2:B${dataLastRow},A2:A${dataLastRow}=TEAM!D3),"")`,
-  };
+  for (let i = 0; i < maxPerProv; i++) {
+    const r = i + 2;
+    ws.getCell(`D${r}`).value = {
+      formula: `IFERROR(INDEX($B$2:$B$${dataLastRow},MATCH(${i + 1},$C$2:$C$${dataLastRow},0)),"")`,
+    };
+  }
   ws.getCell('E1').value = '← otomatis dari Provinsi (TEAM!D3). Jangan diubah.';
   ws.getCell('E1').font = {
     italic: true,
@@ -325,6 +344,7 @@ function buildRefSheet(wb) {
 
   ws.getColumn(1).width = 26;
   ws.getColumn(2).width = 22;
+  ws.getColumn(3).width = 12;
   ws.getColumn(4).width = 22;
   ws.getColumn(5).width = 48;
   ws.getColumn(6).width = 26;
@@ -334,12 +354,42 @@ function buildRefSheet(wb) {
     dataLastRow,
     allCities.length,
     provinces.length,
-    maxPerProv + 5
+    maxPerProv + 1
   ) + 1;
   // Lock a generous range so nothing on Wilayah is editable under sheet protection
   lockAllUsed(ws, Math.max(usedLastRow, 500), 10);
 
   return { provinces, allCities, dataLastRow, maxPerProv };
+}
+
+/**
+ * Locked dropdown source: PT names from daftar-kampus.xlsx
+ * (data/indonesia-universities.json). Sheet is hidden + fully protected.
+ */
+function buildUniversitiesSheet(wb) {
+  const ws = wb.addWorksheet('Universitas', {
+    properties: { defaultRowHeight: 15 },
+    views: [{ state: 'normal', showGridLines: true }],
+    state: 'hidden',
+  });
+  ws.properties.tabColor = { argb: 'FF808080' };
+
+  const header = ws.getCell('A1');
+  header.value = 'Nama Perguruan Tinggi — jangan diubah';
+  header.font = { bold: true, name: 'Calibri' };
+  lockCell(header, true);
+  ws.getColumn(1).width = 72;
+
+  UNIVERSITIES.forEach((name, i) => {
+    const cell = ws.getCell(i + 2, 1);
+    cell.value = name;
+    cell.font = { name: 'Calibri' };
+    lockCell(cell, true);
+  });
+
+  // Lock a generous range so empty cells stay non-editable under sheet protection
+  lockAllUsed(ws, Math.max(UNIVERSITIES.length + 2, 500), 3);
+  return ws;
 }
 
 function buildPetunjukSheet(wb) {
@@ -355,7 +405,11 @@ function buildPetunjukSheet(wb) {
     ['Kolom', 'Aturan & Format'],
     [
       'Sheet TEAM',
-      "Wajib diisi. Yang bisa diedit: D1–D4 (identitas), G1–G2 (Campus League), F8–I9 (Partisipasi & warna kostum). Sel abu-abu (No., Nama Tim, Singkatan, Kategori Tim) terisi otomatis dari rumus — jangan diubah. Provinsi & Kota wajib dari dropdown.",
+      "Wajib diisi. Yang bisa diedit: D1–D4 (identitas), G1–G2 (Campus League), F8–I9 (Ikut/Tidak Ikut & warna kostum). Nama Universitas (D1) wajib dipilih dari dropdown daftar kampus. Sel abu-abu (No., Nama Tim, Singkatan, Kategori Tim) terisi otomatis dari rumus — jangan diubah. Provinsi & Kota wajib dari dropdown.",
+    ],
+    [
+      'Nama Universitas (D1)',
+      `Wajib. Pilih dari dropdown daftar perguruan tinggi (${UNIVERSITIES.length.toLocaleString('id-ID')} entri dari daftar kampus).`,
     ],
     [
       'Nama Sheet',
@@ -410,7 +464,7 @@ function buildPetunjukSheet(wb) {
     ],
     [
       'Proteksi Sheet',
-      'Sheet terkunci. TEAM: D1–D4, G1–G2, dan F8–I9 bisa diedit. Sel abu-abu di tabel tim terkunci karena terisi rumus. PA & PI: hanya A3–AA16 bisa diedit. Sheet Wilayah terkunci penuh (sumber dropdown, jangan diubah).',
+      'Sheet terkunci. TEAM: D1–D4, G1–G2, dan F8–I9 bisa diedit. Sel abu-abu di tabel tim terkunci karena terisi rumus. PA & PI: hanya A3–AA16 bisa diedit. Sheet Wilayah & Universitas terkunci penuh (sumber dropdown; Universitas disembunyikan). Jangan diubah.',
     ],
     ...CL_PETUNJUK_ROWS,
   ];
@@ -457,7 +511,7 @@ function buildTeamSheet(wb) {
   ws.getColumn(1).width = 4.43;
   ws.getColumn(2).width = 7.14;
   ws.getColumn(3).width = 29.71;
-  ws.getColumn(4).width = 34.71;
+  ws.getColumn(4).width = 42;
   ws.getColumn(5).width = 17.57;
   ws.getColumn(6).width = 14;
   ws.getColumn(7).width = 19.43;
@@ -482,6 +536,15 @@ function buildTeamSheet(wb) {
     lockCell(d, false);
   });
 
+  addDataValidation(ws, 'D1', {
+    type: 'list',
+    formulae: [UNIVERSITAS_LIST_FORMULA],
+    promptTitle: 'Nama Universitas',
+    prompt: 'Pilih perguruan tinggi dari daftar kampus',
+    errorTitle: 'Universitas tidak valid',
+    error: 'Pilih nama universitas dari dropdown (daftar kampus).',
+  });
+
   // Banner: auto section notice (merged, locked, gray)
   ws.mergeCells('B6:E6');
   const banner = ws.getCell('B6');
@@ -498,13 +561,13 @@ function buildTeamSheet(wb) {
   }
 
   // Team table header row (row 7)
-  // Auto cols B–E + Partisipasi/Kostum Ketiga: CCCCCC; editable warna G–H: D3D3D3
+  // Auto cols B–E + Ikut/Tidak Ikut/Kostum Ketiga: CCCCCC; editable warna G–H: D3D3D3
   const headers = [
     ['B7', 'No.', FILL_AUTO_GRAY, 'Cambria'],
     ['C7', 'Nama Tim', FILL_AUTO_GRAY, 'Cambria'],
     ['D7', 'Singkatan', FILL_AUTO_GRAY, 'Cambria'],
     ['E7', 'Kategori Tim', FILL_AUTO_GRAY, 'Cambria'],
-    ['F7', 'Partisipasi', FILL_AUTO_GRAY, 'Calibri'],
+    ['F7', 'Ikut/Tidak Ikut', FILL_AUTO_GRAY, 'Calibri'],
     ['G7', 'Warna Kandang', FILL_HEADER_GRAY, 'Cambria'],
     ['H7', 'Warna Tandang', FILL_HEADER_GRAY, 'Cambria'],
     ['I7', 'Kostum Ketiga', FILL_AUTO_GRAY, 'Calibri'],
@@ -561,7 +624,7 @@ function buildTeamSheet(wb) {
     }
   }
 
-  // Province list from Wilayah!F; city list from Wilayah!D (FILTER by D3)
+  // Province list from Wilayah!F; city list from Wilayah!D (INDEX/MATCH by D3)
   addDataValidation(ws, 'D3', {
     type: 'list',
     formulae: [PROVINSI_LIST_FORMULA],
@@ -596,9 +659,9 @@ function buildTeamSheet(wb) {
     addDataValidation(ws, addr, {
       type: 'list',
       formulae: ['"TRUE,FALSE"'],
-      promptTitle: 'Partisipasi',
-      prompt: 'TRUE jika ikut, FALSE jika tidak',
-      errorTitle: 'Partisipasi tidak valid',
+      promptTitle: 'Ikut/Tidak Ikut',
+      prompt: 'TRUE jika ikut, FALSE jika tidak ikut',
+      errorTitle: 'Nilai tidak valid',
       error: 'Pilih TRUE atau FALSE.',
     });
   }
@@ -1174,14 +1237,27 @@ async function protectSheets(wb, password) {
     pivotTables: false,
   };
 
+  const sourceSheetOpts = {
+    ...opts,
+    selectLockedCells: true,
+    selectUnlockedCells: false,
+    formatCells: false,
+    formatColumns: false,
+    formatRows: false,
+    insertColumns: false,
+    insertRows: false,
+    insertHyperlinks: false,
+    deleteColumns: false,
+    deleteRows: false,
+    sort: false,
+    autoFilter: false,
+    pivotTables: false,
+  };
+
   for (const ws of wb.worksheets) {
-    if (ws.name === 'Wilayah') {
-      // Dropdown source: fully locked — no unlocked cells to edit
-      await ws.protect(password, {
-        ...opts,
-        selectLockedCells: true,
-        selectUnlockedCells: false,
-      });
+    if (ws.name === 'Wilayah' || ws.name === 'Universitas') {
+      // Dropdown sources: every cell locked, no unlocked cells to edit
+      await ws.protect(password, sourceSheetOpts);
       continue;
     }
     await ws.protect(password, opts);
@@ -1197,12 +1273,13 @@ async function generate(outPath, password) {
 
   initRegionListFormulas();
 
-  // Sheet order: instructions → TEAM → PA → PI → Wilayah (dropdown source)
+  // Sheet order: instructions → TEAM → PA → PI → Wilayah / Universitas (dropdown sources)
   buildPetunjukSheet(wb);
   buildTeamSheet(wb);
   buildRosterSheet(wb, 'PA');
   buildRosterSheet(wb, 'PI');
   buildRefSheet(wb);
+  buildUniversitiesSheet(wb);
 
   wb.views = [{ x: 0, y: 0, width: 12000, height: 15000, firstSheet: 0, activeTab: 1 }];
 

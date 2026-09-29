@@ -1,5 +1,5 @@
 node_modules/
 output/
 *.xlsx
-!data/
+!data/daftar-kampus.xlsx
 .DS_Store

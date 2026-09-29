@@ -6,7 +6,8 @@
   "main": "generate.js",
   "scripts": {
     "generate": "node generate.js",
-    "generate:out": "node generate.js --out ./output/Template-Futsal-Kompit.xlsx"
+    "generate:out": "node generate.js --out ./output/Template-Futsal-Kompit.xlsx",
+    "fetch:universities": "node scripts/fetch-universities.js"
   },
   "repository": {
     "type": "git",
