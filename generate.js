@@ -4,7 +4,8 @@
  *
  * Editable ranges (everything else is sheet-protected):
  *   - TEAM: D1:D4 (identitas) + G1:G2 (Campus League) + F8:I9 (Partisipasi & warna)
- *   - PA / PI: A3:Q16 (Kompit) + R3:X16 (Campus League)
+ *   - PA / PI: A3:Q16 (Kompit) + R3:AA16 (Campus League)
+ *   - Wilayah: fully locked (dropdown source only)
  *
  * Campus League (CL) additions are grouped under "CL_*" constants and
  * "applyCl*" functions so Kompit's own columns stay untouched. CL cells share
@@ -56,8 +57,10 @@ const CL_BPJSTK_LENGTH = 11;
 
 /**
  * Extra roster columns CL needs to build User / UserAttribute records.
- * Appended after Kompit's columns in this order (R..X). `sample` holds the
+ * Appended after Kompit's columns in this order (R..AA). `sample` holds the
  * example values for the Athlete (row 3) and Official (row 4) sample rows.
+ *
+ * Optional `clubYear: true` enforces format "<club>,<tahun>" when filled.
  */
 const CL_ROSTER_COLUMNS = [
   { header: 'Ukuran Baju', width: 16, sample: { PA: ['L', 'XL'], PI: ['M', 'S'] } },
@@ -75,10 +78,31 @@ const CL_ROSTER_COLUMNS = [
     sample: { PA: ['Honda Beat', 'Toyota Avanza'], PI: ['Yamaha Mio', 'Honda Scoopy'] },
   },
   {
+    header: 'Merk dan Tipe Laptop',
+    width: 26,
+    sample: { PA: ['ASUS VivoBook', 'Lenovo IdeaPad'], PI: ['MacBook Air', 'Acer Aspire'] },
+  },
+  {
     header: 'Nomor Kepesertaan BPJSTK',
     width: 26,
     sample: { PA: ['12345678901', '10987654321'], PI: ['11223344556', '16543210987'] },
     text: true, // keep leading zeros
+  },
+  {
+    header: 'Asal Club (Pro/Non Pro) Sebelumnya\ndan tahun bergabung',
+    width: 35,
+    sample: { PA: ['Persib,2020', 'Arema,2019'], PI: ['Persib,2020', 'Persebaya,2021'] },
+    text: true,
+    wrapHeader: true,
+    clubYear: true,
+  },
+  {
+    header: 'Asal Club (Pro/Non Pro) saat ini\ndan tahun bergabung',
+    width: 31,
+    sample: { PA: ['Persija,2025', 'Bali United,2024'], PI: ['Persija,2025', 'PSIS,2023'] },
+    text: true,
+    wrapHeader: true,
+    clubYear: true,
   },
 ];
 const CL_LAST_COL = KOMPIT_LAST_COL + CL_ROSTER_COLUMNS.length;
@@ -90,9 +114,18 @@ const CL_PETUNJUK_ROWS = [
   ['Merk dan Tipe HP', 'Opsional. Contoh: Samsung Galaxy A54.'],
   ['Nama Bank', 'Opsional. Nama bank rekening peserta (contoh: BCA).'],
   ['Merk dan Tipe Kendaraan', 'Opsional. Contoh: Honda Beat.'],
+  ['Merk dan Tipe Laptop', 'Opsional. Contoh: ASUS VivoBook.'],
   [
     'Nomor Kepesertaan BPJSTK',
     `Nomor kepesertaan BPJS Ketenagakerjaan, ${CL_BPJSTK_LENGTH} digit angka. Diisi untuk Athlete dan Official yang sudah terdaftar.`,
+  ],
+  [
+    'Asal Club (Pro/Non Pro) Sebelumnya dan tahun bergabung',
+    'Opsional. Format: <nama club>,<tahun> (contoh: Persib,2020). Hanya satu koma; tahun 4 digit.',
+  ],
+  [
+    'Asal Club (Pro/Non Pro) saat ini dan tahun bergabung',
+    'Opsional. Format: <nama club>,<tahun> (contoh: Persija,2025). Hanya satu koma; tahun 4 digit.',
   ],
   [
     'Cabang Olahraga (sheet TEAM, G1)',
@@ -297,11 +330,14 @@ function buildRefSheet(wb) {
   ws.getColumn(6).width = 26;
   ws.getColumn(7).width = 22;
 
-  lockAllUsed(
-    ws,
-    Math.max(dataLastRow, allCities.length, provinces.length, maxPerProv + 5) + 1,
-    7
-  );
+  const usedLastRow = Math.max(
+    dataLastRow,
+    allCities.length,
+    provinces.length,
+    maxPerProv + 5
+  ) + 1;
+  // Lock a generous range so nothing on Wilayah is editable under sheet protection
+  lockAllUsed(ws, Math.max(usedLastRow, 500), 10);
 
   return { provinces, allCities, dataLastRow, maxPerProv };
 }
@@ -374,7 +410,7 @@ function buildPetunjukSheet(wb) {
     ],
     [
       'Proteksi Sheet',
-      'Sheet terkunci. TEAM: D1–D4, G1–G2, dan F8–I9 bisa diedit. Sel abu-abu di tabel tim terkunci karena terisi rumus. PA & PI: hanya A3–X16 bisa diedit. Sheet Wilayah adalah sumber dropdown (jangan diubah).',
+      'Sheet terkunci. TEAM: D1–D4, G1–G2, dan F8–I9 bisa diedit. Sel abu-abu di tabel tim terkunci karena terisi rumus. PA & PI: hanya A3–AA16 bisa diedit. Sheet Wilayah terkunci penuh (sumber dropdown, jangan diubah).',
     ],
     ...CL_PETUNJUK_ROWS,
   ];
@@ -1015,7 +1051,7 @@ function buildRosterSheet(wb, name) {
   applyRosterValidations(ws);
   applyClRosterColumns(ws, name);
 
-  // Keep header / empty row locked; only A3:X16 is editable
+  // Keep header / empty row locked; only A3:AA16 is editable
   for (let c = 1; c <= CL_LAST_COL; c++) {
     lockCell(ws.getCell(1, c), true);
     lockCell(ws.getCell(2, c), true);
@@ -1025,12 +1061,23 @@ function buildRosterSheet(wb, name) {
 }
 
 /**
- * Campus League roster columns (R..X): header, widths, sample values,
+ * Optional club+year format: "<club>,<tahun>" (blank allowed).
+ * Exactly one comma, non-empty club name, 4-digit year in a sensible range.
+ */
+function formulaClubYear(cell) {
+  const club = `TRIM(LEFT(${cell},FIND(",",${cell})-1))`;
+  const year = `TRIM(MID(${cell},FIND(",",${cell})+1,99))`;
+  return `OR(${cell}="",AND(ISNUMBER(FIND(",",${cell})),FIND(",",${cell})>1,LEN(${cell})-LEN(SUBSTITUTE(${cell},",",""))=1,LEN(${club})>=1,LEN(${year})=4,ISNUMBER(VALUE(${year})),VALUE(${year})>=1950,VALUE(${year})<=${CURRENT_YEAR + 1}))`;
+}
+
+/**
+ * Campus League roster columns (R..AA): header, widths, sample values,
  * borders/unlock for the data rows and validations. Mirrors what Kompit's
  * applyRosterHeaders / applySampleRows / applyRosterValidations do for A..Q.
  */
 function applyClRosterColumns(ws, sheetName) {
   const gender = SAMPLE_ROSTERS[sheetName] ? sheetName : 'PA';
+  let needsWrappedHeader = false;
 
   CL_ROSTER_COLUMNS.forEach((col, i) => {
     const c = KOMPIT_LAST_COL + 1 + i;
@@ -1041,6 +1088,10 @@ function applyClRosterColumns(ws, sheetName) {
     header.value = col.header;
     header.font = { name: 'Cambria', bold: true, color: { theme: 1 }, size: 11 };
     header.border = { ...THIN_BORDER };
+    if (col.wrapHeader) {
+      header.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+      needsWrappedHeader = true;
+    }
     ws.getColumn(c).width = col.width;
 
     for (let r = DATA_START_ROW; r <= DATA_END_ROW; r++) {
@@ -1084,7 +1135,25 @@ function applyClRosterColumns(ws, sheetName) {
         });
       }
     }
+
+    if (col.clubYear) {
+      for (let r = DATA_START_ROW; r <= DATA_END_ROW; r++) {
+        const ref = `${colLetter}${r}`;
+        addDataValidation(ws, ref, {
+          type: 'custom',
+          formulae: [formulaClubYear(ref)],
+          promptTitle: 'Asal Club',
+          prompt: 'Opsional. Format: nama club,tahun (contoh: Persib,2020)',
+          errorTitle: 'Format club tidak valid',
+          error: `Gunakan format <club>,<tahun> (contoh: Persib,2020). Tahun 1950–${CURRENT_YEAR + 1}. Boleh dikosongkan.`,
+        });
+      }
+    }
   });
+
+  if (needsWrappedHeader) {
+    ws.getRow(2).height = 36;
+  }
 }
 
 async function protectSheets(wb, password) {
@@ -1107,8 +1176,12 @@ async function protectSheets(wb, password) {
 
   for (const ws of wb.worksheets) {
     if (ws.name === 'Wilayah') {
-      // Dropdown source sheet: visible but not editable
-      await ws.protect(password, { ...opts, selectUnlockedCells: true });
+      // Dropdown source: fully locked — no unlocked cells to edit
+      await ws.protect(password, {
+        ...opts,
+        selectLockedCells: true,
+        selectUnlockedCells: false,
+      });
       continue;
     }
     await ws.protect(password, opts);
@@ -1147,7 +1220,8 @@ async function main() {
 
 Editable:
   TEAM  D1:D4, G1:G2, F8:I9
-  PA/PI A3:X16
+  PA/PI A3:AA16
+  Wilayah (locked)
 
 Default password: ${SHEET_PROTECT_PASSWORD}`);
     process.exit(0);
@@ -1160,7 +1234,7 @@ Default password: ${SHEET_PROTECT_PASSWORD}`);
   const file = await generate(outPath, args.password);
   console.log(`Generated: ${file}`);
   console.log(`Sheet password: ${args.password}`);
-  console.log('Editable: TEAM!D1:D4 + G1:G2 + F8:I9 , PA/PI!A3:X16');
+  console.log('Editable: TEAM!D1:D4 + G1:G2 + F8:I9 , PA/PI!A3:AA16 (Wilayah locked)');
 }
 
 main().catch((err) => {
