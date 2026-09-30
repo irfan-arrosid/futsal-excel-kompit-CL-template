@@ -44,7 +44,6 @@ const ROSTER_SECTIONS = [
   { tipe: 'Coach', headerRow: 29, dataStart: 30, count: 2 },
   { tipe: 'Manager', headerRow: 33, dataStart: 34, count: 1 },
 ];
-const SAMPLE_COUNTS = { Athlete: 20, Official: 3, Coach: 2, Manager: 1 };
 const CURRENT_YEAR = new Date().getFullYear();
 const TAHUN_AWAL_MIN = 2023;
 
@@ -167,7 +166,7 @@ const CL_PETUNJUK_ROWS = [
   ],
   [
     'Catatan Campus League',
-    `Setiap tim (sheet PA / PI) wajib memiliki minimal satu baris Manager. Sheet PA/PI dipisah per seksi (Athlete / Official / Coach / Manager), masing-masing dengan header sendiri. Baris contoh (${SAMPLE_COUNTS.Athlete} Athlete, ${SAMPLE_COUNTS.Official} Official, ${SAMPLE_COUNTS.Coach} Coach, ${SAMPLE_COUNTS.Manager} Manager) harus dihapus atau ditimpa sebelum diunggah.`,
+    `Setiap tim (sheet PA / PI) wajib memiliki minimal satu baris Manager. Sheet PA/PI dipisah per seksi (Athlete / Official / Coach / Manager), masing-masing dengan header sendiri. Baris contoh (nama diawali 'Contoh', mis. Contoh Atlet Putra / Contoh Manager Putri, email @example.com) harus dihapus atau ditimpa sebelum diunggah — baris yang namanya masih nama contoh tidak diimpor.`,
   ],
 ];
 
@@ -451,18 +450,18 @@ function buildPetunjukSheet(wb) {
       'Layout PA / PI',
       `Dipisah per seksi dengan header sendiri: Athlete (20 baris), Official (3), Coach (2), Manager (1). Baris contoh harus diganti sebelum diunggah.`,
     ],
-    ['Nama*', 'Nama lengkap. Wajib diisi.'],
+    ['Nama*', 'Nama lengkap. Wajib diisi untuk semua Tipe (Athlete, Official, Coach, Manager).'],
     [
       'Foto',
       'URL foto peserta (http:// atau https://). Opsional.',
     ],
     [
       'Email*',
-      'Alamat email yang valid (contoh: rizky.pratama@student.ugm.ac.id). Wajib diisi dan tidak boleh duplikat.',
+      'Alamat email yang valid (contoh: nama.peserta@kampus.ac.id). Wajib diisi untuk semua Tipe (Athlete, Official, Coach, Manager) dan tidak boleh duplikat.',
     ],
     [
       'No. WhatsApp*',
-      'Nomor HP/WhatsApp Indonesia. Hanya angka (huruf ditolak). Format: 08xxxxxxxxxx, 62xxxxxxxxxx, atau +62xxxxxxxxxx. Wajib diisi.',
+      'Nomor HP/WhatsApp Indonesia. Hanya angka (huruf ditolak). Format: 08xxxxxxxxxx, 62xxxxxxxxxx, atau +62xxxxxxxxxx. Wajib diisi untuk semua Tipe (Athlete, Official, Coach, Manager).',
     ],
     [
       'No. Punggung*',
@@ -500,7 +499,7 @@ function buildPetunjukSheet(wb) {
     ],
     [
       'Proteksi Sheet',
-      'Sheet terkunci. TEAM: D1–D4, G1–G2, dan F8–I9 bisa diedit. Sel abu-abu di tabel tim terkunci karena terisi rumus. PA & PI: hanya A3–AD32 bisa diedit. Sheet Wilayah & Universitas terkunci penuh (sumber dropdown; Universitas disembunyikan). Jangan diubah.',
+      'Sheet terkunci. TEAM: D1–D4, G1–G2, dan F8–I9 bisa diedit. Sel abu-abu di tabel tim terkunci karena terisi rumus. PA & PI: hanya baris data tiap seksi (kolom B–AD) yang bisa diedit; kolom Tipe dan header seksi terkunci. Sheet Wilayah & Universitas terkunci penuh (sumber dropdown; Universitas disembunyikan). Jangan diubah.',
     ],
     ...CL_PETUNJUK_ROWS,
   ];
@@ -750,7 +749,9 @@ function applyClTeamFields(ws) {
 }
 
 function applyRosterHeaders(ws) {
-  // Kompit headers per section; red * only on Athlete (Email keeps * on all sections)
+  // Kompit headers per section. Athlete: red * on every required column.
+  // Official/Coach/Manager: red * on the columns required for every Tipe
+  // (Nama, Email, No. WhatsApp) — without it staff rows read as optional.
   const plainHeader = (text) => text;
   const athleteDefs = [
     ['A', requiredHeader('Tipe')],
@@ -774,10 +775,10 @@ function applyRosterHeaders(ws) {
   ];
   const staffDefs = [
     ['A', plainHeader('Tipe')],
-    ['B', plainHeader('Nama')],
+    ['B', requiredHeader('Nama')],
     ['C', 'Foto'],
     ['D', requiredHeader('Email')],
-    ['E', plainHeader('No. WhatsApp')],
+    ['E', requiredHeader('No. WhatsApp')],
     // Athlete-only: F/G (jersey/posisi), J–N (NIM/Fakultas/Jurusan/Tahun Awal/IPK)
     ['H', plainHeader('Tempat Lahir')],
     ['I', plainHeader('Tanggal Lahir')],
@@ -824,222 +825,27 @@ function photoHyperlink(slug) {
   };
 }
 
-function slugifyName(name) {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-function pick(arr, i) {
-  return arr[i % arr.length];
-}
-
-/** Build dummy roster per section: 20 Athlete + 3 Official + 2 Coach + 1 Manager. */
-function buildSampleRoster(gender) {
-  const isPA = gender === 'PA';
-  const athleteNames = isPA
-    ? [
-        'Rizky Pratama',
-        'Dimas Nugroho',
-        'Andi Saputra',
-        'Fajar Maulana',
-        'Bayu Setiawan',
-        'Aditya Wijaya',
-        'Rafi Alfarizi',
-        'Yoga Kurniawan',
-        'Gilang Ramadhan',
-        'Eko Prasetyo',
-        'Arif Rahman',
-        'Hafiz Nurcahyo',
-        'Ilham Fadilah',
-        'Joko Santoso',
-        'Kevin Apriliansyah',
-        'Lutfi Hakim',
-        'Muhammad Irfan',
-        'Naufal Akbar',
-        'Putra Mahendra',
-        'Reza Firmansyah',
-      ]
-    : [
-        'Aulia Rahma',
-        'Siti Nurhaliza',
-        'Dewi Lestari',
-        'Putri Ayuningtyas',
-        'Nadia Safitri',
-        'Intan Permata',
-        'Citra Melati',
-        'Dinda Kartika',
-        'Farah Anindya',
-        'Gita Prameswari',
-        'Hana Kusuma',
-        'Indah Puspita',
-        'Jasmine Aurelia',
-        'Kirana Putri',
-        'Larasati Dewi',
-        'Mira Anggraini',
-        'Nabila Zahra',
-        'Olivia Maharani',
-        'Putri Wulandari',
-        'Rani Febrianti',
-      ];
-  const officialNames = isPA
-    ? ['Budi Santoso', 'Dedi Kurniawan', 'Eko Wahyudi']
-    : ['Maya Kusumawati', 'Sari Melati', 'Wulan Cahya'];
-  const coachNames = isPA ? ['Hendra Gunawan', 'Slamet Riyadi'] : ['Rina Wulandari', 'Susi Susanti'];
-  const managerNames = isPA ? ['Agus Firmansyah'] : ['Fitri Handayani'];
-
-  const positions = ['Goalkeeper', 'Pivot', 'Flank', 'Anchor'];
-  const cities = isPA
-    ? ['Yogyakarta', 'Sleman', 'Bantul', 'Kulon Progo', 'Gunung Kidul']
-    : ['Bantul', 'Yogyakarta', 'Sleman', 'Wonosari', 'Wates'];
-  const faculties = isPA
-    ? [
-        'Fakultas Ilmu Keolahragaan',
-        'Fakultas Ekonomika dan Bisnis',
-        'Fakultas Teknik',
-        'Fakultas Ilmu Sosial',
-        'Fakultas MIPA',
-      ]
-    : [
-        'Fakultas Kedokteran',
-        'Fakultas Psikologi',
-        'Fakultas Ilmu Budaya',
-        'Fakultas Farmasi',
-        'Fakultas Hukum',
-      ];
-  const majors = isPA
-    ? ['Ilmu Keolahragaan', 'Manajemen', 'Teknik Informatika', 'Akuntansi', 'Ilmu Komunikasi']
-    : ['Kedokteran', 'Psikologi', 'Pendidikan Bahasa', 'Farmasi', 'Ilmu Hukum'];
-  const baju = isPA ? ['M', 'L', 'XL', 'L', 'XXL'] : ['S', 'M', 'L', 'M', 'S'];
-  const celana = isPA ? ['30', '32', '34', '33', '36'] : ['26', '27', '28', '29', '30'];
-  const sepatu = isPA ? [40, 41, 42, 43, 44] : [36, 37, 38, 39, 40];
-  const phones = isPA
-    ? ['Samsung Galaxy A54', 'iPhone 13', 'Xiaomi Redmi Note 12', 'OPPO A78', 'Vivo Y36']
-    : ['iPhone 14', 'Samsung Galaxy A34', 'Xiaomi 13T', 'OPPO Reno10', 'Realme C55'];
-  const banks = isPA ? ['BCA', 'Mandiri', 'BRI', 'BNI', 'BTN'] : ['BRI', 'BNI', 'BCA', 'Mandiri', 'CIMB'];
-  const kendaraan = isPA
-    ? ['Honda Beat', 'Yamaha NMAX', 'Honda Vario', 'Toyota Avanza', 'Suzuki Carry']
-    : ['Yamaha Mio', 'Honda Scoopy', 'Honda Beat', 'Yamaha Fino', 'Honda Genio'];
-  const laptops = isPA
-    ? ['ASUS VivoBook', 'Lenovo IdeaPad', 'Acer Aspire', 'HP Pavilion', 'Dell Inspiron']
-    : ['MacBook Air', 'ASUS Zenbook', 'Lenovo Yoga', 'Acer Swift', 'HP Envy'];
-  const clubsPrev = ['Persib,2020', 'Arema,2019', 'Persebaya,2021', 'PSIS,2018', 'Bali United,2022'];
-  const clubsNow = ['Persija,2025', 'PSIM,2024', 'PSS,2023', 'Persis,2025', 'Madura United,2024'];
-  const smp = isPA
-    ? [
-        'SMP Negeri 1 Yogyakarta',
-        'SMP Negeri 5 Sleman',
-        'SMP Negeri 2 Bantul',
-        'SMP Muhammadiyah 3 Yogya',
-        'SMP Negeri 1 Wates',
-      ]
-    : [
-        'SMP Negeri 2 Bantul',
-        'SMP Muhammadiyah 1 Yogya',
-        'SMP Negeri 4 Sleman',
-        'SMP Negeri 1 Yogyakarta',
-        'SMP Pangudi Luhur',
-      ];
-  const sma = isPA
-    ? [
-        'SMA Negeri 1 Yogyakarta',
-        'SMA Negeri 3 Sleman',
-        'SMA Negeri 1 Bantul',
-        'SMA Negeri 8 Yogyakarta',
-        'MAN 1 Yogyakarta',
-      ]
-    : [
-        'SMA Negeri 1 Bantul',
-        'SMA Negeri 8 Yogyakarta',
-        'SMA Negeri 1 Sleman',
-        'SMA Negeri 3 Yogyakarta',
-        'MAN 2 Bantul',
-      ];
-
-  const sectionByTipe = Object.fromEntries(ROSTER_SECTIONS.map((s) => [s.tipe, s]));
-  const rows = [];
-  let personIdx = 0;
-
-  const pushFull = (tipe, name, jersey, posisi, row) => {
-    const i = personIdx++;
-    const slug = slugifyName(name);
-    const emailLocal = slug.replace(/-/g, '.');
-    const nimYear = 23 + (i % 3);
-    const values = {
-      A: tipe,
-      B: name,
-      C: photoHyperlink(slug),
-      D: `${emailLocal}@student.ugm.ac.id`,
-      E: `0812${String(70000000 + i * 137).slice(0, 8)}`,
-      H: pick(cities, i),
-      I: `${String(10 + (i % 18)).padStart(2, '0')}-${String(1 + (i % 12)).padStart(2, '0')}-200${4 + (i % 3)}`,
-      O: isPA ? 65 + (i % 15) : 48 + (i % 12),
-      P: isPA ? 168 + (i % 14) : 155 + (i % 12),
-      Q: slug.replace(/-/g, '').slice(0, 30),
-      R: slug.replace(/-/g, '').slice(0, 24),
-      S: pick(baju, i),
-      T: pick(celana, i),
-      U: pick(sepatu, i),
-      V: pick(phones, i),
-      W: pick(banks, i),
-      X: pick(kendaraan, i),
-      Y: pick(laptops, i),
-      AA: pick(clubsPrev, i),
-      AB: pick(clubsNow, i),
-    };
-    if (tipe === 'Athlete') {
-      values.F = jersey;
-      values.G = posisi;
-      values.J = `${nimYear}5150${String(7000 + i).padStart(4, '0')}`;
-      values.K = pick(faculties, i);
-      values.L = pick(majors, i);
-      values.M = 2023 + (i % 2);
-      values.N = Number((2.8 + (i % 12) * 0.1).toFixed(1));
-      values.Z = String(10000000000 + i * 111).slice(0, 11);
-      values.AC = pick(smp, i);
-      values.AD = pick(sma, i);
-    }
-    rows.push({ row, values });
-  };
-
-  const pushStaff = (tipe, name, row) => {
-    personIdx++;
-    rows.push({
-      row,
-      values: {
-        A: tipe,
-        B: name,
-        C: photoHyperlink(slugifyName(name)),
-      },
-    });
-  };
-
-  const ath = sectionByTipe.Athlete;
-  athleteNames.slice(0, SAMPLE_COUNTS.Athlete).forEach((name, i) => {
-    pushFull('Athlete', name, i + 1, pick(positions, i), ath.dataStart + i);
-  });
-  const off = sectionByTipe.Official;
-  officialNames.slice(0, SAMPLE_COUNTS.Official).forEach((name, i) => {
-    pushFull('Official', name, null, null, off.dataStart + i);
-  });
-  const coach = sectionByTipe.Coach;
-  coachNames.slice(0, SAMPLE_COUNTS.Coach).forEach((name, i) => {
-    pushStaff('Coach', name, coach.dataStart + i);
-  });
-  const mgr = sectionByTipe.Manager;
-  managerNames.slice(0, SAMPLE_COUNTS.Manager).forEach((name, i) => {
-    pushStaff('Manager', name, mgr.dataStart + i);
-  });
-
-  return rows;
-}
-
+/**
+ * Example roster rows: one per section (Athlete row 3, Official 25, Coach 30,
+ * Manager 34). Values are deliberately obvious placeholders — names start
+ * with "Contoh", emails use the reserved example.com domain (RFC 2606), and
+ * phone/NIM numbers are dummies — so they cannot be mistaken for real
+ * participants. Coach and Manager carry Email and No. WhatsApp too: those are
+ * required for every Tipe, and an empty example reads as "optional".
+ */
 const SAMPLE_ROSTERS = {
-  PA: buildSampleRoster('PA'),
-  PI: buildSampleRoster('PI'),
+  PA: [
+    { row: 3, values: { A: 'Athlete', B: 'Contoh Atlet Putra', C: photoHyperlink('contoh-atlet-putra'), D: 'contoh.atlet.putra@example.com', E: '081234567890', F: 1, G: 'Goalkeeper', H: 'Yogyakarta', I: '10-01-2004', J: '2300000001', K: 'Fakultas Ilmu Keolahragaan', L: 'Ilmu Keolahragaan', M: 2023, N: 3.5, O: 65, P: 168, Q: 'contoh_atlet_putra', R: 'contoh_atlet_putra', S: 'M', T: '30', U: 40, V: 'Samsung Galaxy A54', W: 'BCA', X: 'Honda Beat', Y: 'ASUS VivoBook', Z: '10000000000', AA: 'Persib,2020', AB: 'Persija,2025', AC: 'SMP Negeri 1 Yogyakarta', AD: 'SMA Negeri 1 Yogyakarta' } },
+    { row: 25, values: { A: 'Official', B: 'Contoh Official Putra', C: photoHyperlink('contoh-official-putra'), D: 'contoh.official.putra@example.com', E: '081234567891', H: 'Yogyakarta', I: '12-09-1990', O: 70, P: 174, Q: 'contoh_official_putra', R: 'contoh_official_putra', S: 'M', T: '30', U: 40, V: 'Samsung Galaxy A54', W: 'BCA', X: 'Honda Beat', Y: 'ASUS VivoBook', AA: 'Persib,2020', AB: 'Persija,2025' } },
+    { row: 30, values: { A: 'Coach', B: 'Contoh Pelatih Putra', C: photoHyperlink('contoh-pelatih-putra'), D: 'contoh.pelatih.putra@example.com', E: '081234567894', H: 'Yogyakarta', I: '05-03-1985', O: 72, P: 172, Q: 'contoh_pelatih_putra', R: 'contoh_pelatih_putra', S: 'L', T: '32', U: 42, V: 'Samsung Galaxy A54', W: 'BCA', X: 'Honda Beat', Y: 'ASUS VivoBook', AA: 'Persib,2015', AB: 'Persija,2020' } },
+    { row: 34, values: { A: 'Manager', B: 'Contoh Manager Putra', C: photoHyperlink('contoh-manager-putra'), D: 'contoh.manager.putra@example.com', E: '081234567895', H: 'Yogyakarta', I: '20-07-1988', O: 75, P: 170, Q: 'contoh_manager_putra', R: 'contoh_manager_putra', S: 'L', T: '32', U: 41, V: 'Samsung Galaxy A54', W: 'BCA', X: 'Honda Beat', Y: 'ASUS VivoBook' } },
+  ],
+  PI: [
+    { row: 3, values: { A: 'Athlete', B: 'Contoh Atlet Putri', C: photoHyperlink('contoh-atlet-putri'), D: 'contoh.atlet.putri@example.com', E: '081234567892', F: 1, G: 'Goalkeeper', H: 'Bantul', I: '10-01-2004', J: '2300000002', K: 'Fakultas Kedokteran', L: 'Kedokteran', M: 2023, N: 3.5, O: 48, P: 155, Q: 'contoh_atlet_putri', R: 'contoh_atlet_putri', S: 'S', T: '26', U: 36, V: 'iPhone 14', W: 'BRI', X: 'Yamaha Mio', Y: 'MacBook Air', Z: '10000000000', AA: 'Persib,2020', AB: 'Persija,2025', AC: 'SMP Negeri 2 Bantul', AD: 'SMA Negeri 1 Bantul' } },
+    { row: 25, values: { A: 'Official', B: 'Contoh Official Putri', C: photoHyperlink('contoh-official-putri'), D: 'contoh.official.putri@example.com', E: '081234567893', H: 'Bantul', I: '12-09-1990', O: 56, P: 163, Q: 'contoh_official_putri', R: 'contoh_official_putri', S: 'S', T: '26', U: 36, V: 'iPhone 14', W: 'BRI', X: 'Yamaha Mio', Y: 'MacBook Air', AA: 'Persib,2020', AB: 'Persija,2025' } },
+    { row: 30, values: { A: 'Coach', B: 'Contoh Pelatih Putri', C: photoHyperlink('contoh-pelatih-putri'), D: 'contoh.pelatih.putri@example.com', E: '081234567896', H: 'Bantul', I: '05-03-1985', O: 58, P: 160, Q: 'contoh_pelatih_putri', R: 'contoh_pelatih_putri', S: 'M', T: '28', U: 38, V: 'iPhone 14', W: 'BRI', X: 'Yamaha Mio', Y: 'MacBook Air', AA: 'Persib,2015', AB: 'Persija,2020' } },
+    { row: 34, values: { A: 'Manager', B: 'Contoh Manager Putri', C: photoHyperlink('contoh-manager-putri'), D: 'contoh.manager.putri@example.com', E: '081234567897', H: 'Bantul', I: '20-07-1988', O: 55, P: 162, Q: 'contoh_manager_putri', R: 'contoh_manager_putri', S: 'M', T: '28', U: 37, V: 'iPhone 14', W: 'BRI', X: 'Yamaha Mio', Y: 'MacBook Air' } },
+  ],
 };
 
 function rosterSectionForRow(row) {
@@ -1050,6 +856,17 @@ function rosterSectionForRow(row) {
 const ATHLETE_ONLY_COL_INDEXES = new Set([6, 7, 10, 11, 12, 13, 14, 26]);
 
 function applySampleRows(ws, sheetName) {
+  // Tipe is pre-filled (and locked) on every slot of its section: with one
+  // example row per section, the empty slots would otherwise have a blank,
+  // locked Tipe cell that nobody can fill in.
+  ROSTER_SECTIONS.forEach((section) => {
+    for (let r = section.dataStart; r < section.dataStart + section.count; r++) {
+      const cell = ws.getCell(r, 1);
+      cell.value = section.tipe;
+      cell.font = { name: 'Calibri', color: { theme: 1 } };
+    }
+  });
+
   // Example roster rows so users see expected formats
   const samples = SAMPLE_ROSTERS[sheetName] || SAMPLE_ROSTERS.PA;
 

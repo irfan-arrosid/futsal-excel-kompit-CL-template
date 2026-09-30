@@ -6,7 +6,7 @@ Node.js generator for the Kompit Futsal CL team roster Excel template.
 
 - Sheet protection with limited editable ranges
   - **TEAM**: `D1:D4` (identitas) + `G1:G2` (Campus League) + `F8:I9` (Ikut/Tidak Ikut & warna kostum)
-  - **PA / PI**: sectioned roster — Athlete / Official / Coach / Manager each with own header; dummy 20 / 3 / 2 / 1; Kompit `A:R` + Campus League `S:AD`
+  - **PA / PI**: sectioned roster — Athlete / Official / Coach / Manager each with own header; one clearly-fake example row per section ("Contoh …", `@example.com`); Kompit `A:R` + Campus League `S:AD`
   - **Wilayah**: fully locked (dropdown source)
 - Indonesian province & cascading city dropdowns (COUNTIF rank + INDEX/MATCH on `Wilayah`)
 - Nama Universitas dropdown dari `data/daftar-kampus.xlsx` (`Universitas` sheet / `data/indonesia-universities.json`)
